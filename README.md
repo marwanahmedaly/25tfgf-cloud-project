@@ -1,10 +1,10 @@
-# Cloud-based StackOverflow Python Chatbot
+# Cloud-based Medical Chatbot
 
 **Course:** CISC 886 – Cloud Computing, Queen's University
 
 **Approach:** A — Cost-optimized hybrid (local training, minimal cloud)
 
-A chatbot fine-tuned on StackOverflow Python Q&A data, leveraging cloud infrastructure for scalable data processing and deployment while optimizing costs through local model training.
+A chatbot fine-tuned on medical Q&A data (ruslanmv/ai-medical-dataset), leveraging cloud infrastructure for scalable data processing and deployment while optimizing costs through local model training.
 
 ## Architecture
 
@@ -24,6 +24,8 @@ A chatbot fine-tuned on StackOverflow Python Q&A data, leveraging cloud infrastr
                            │   5000 (Train)│      │   (User UI)    │
                            └────────────────┘      └────────────────┘
 ```
+
+Data flows from the HuggingFace AI Medical Dataset (ruslanmv/ai-medical-dataset) downloaded locally, uploaded to S3 as raw data, processed by EMR Spark into clean tokenized Parquet with length-based quality filtering, downloaded to local GPU for QLoRA fine-tuning with Gemma-4-2B, exported as GGUF to EC2, served via Ollama, and accessed through OpenWebUI in a browser.
 
 ## Pipeline
 
@@ -72,13 +74,13 @@ terraform apply -var="net_id=YOUR_NETID" -var="key_name=YOUR_KEY"
 ### 2. Upload Bootstrap Script to S3
 
 ```bash
-aws s3 cp spark/bootstrap_emr.sh s3://YOUR_NETID-so-python/
+aws s3 cp spark/bootstrap_emr.sh s3://YOUR_NETID-ai-medical/
 ```
 
 ### 3. Upload Raw Data to S3
 
 ```bash
-aws s3 cp ./data/stackoverflow_python/ s3://YOUR_NETID-so-python/raw/ --recursive
+aws s3 cp ./data/ai-medical-dataset/data/ s3://YOUR_NETID-ai-medical/raw/ --recursive
 ```
 
 ### 4. Run EMR Preprocessing
@@ -86,15 +88,15 @@ aws s3 cp ./data/stackoverflow_python/ s3://YOUR_NETID-so-python/raw/ --recursiv
 ```bash
 aws emr create-cluster ...
 # Or use the processed data workflow
-spark-submit s3://YOUR_NETID-so-python/spark/preprocess.py \
-    --input s3://YOUR_NETID-so-python/raw/ \
-    --output s3://YOUR_NETID-so-python/processed/
+spark-submit s3://YOUR_NETID-ai-medical/spark/preprocess.py \
+    --input s3://YOUR_NETID-ai-medical/raw/ \
+    --output s3://YOUR_NETID-ai-medical/processed/
 ```
 
 ### 5. Download Processed Data
 
 ```bash
-aws s3 sync s3://YOUR_NETID-so-python/processed/ ./data/processed/
+aws s3 sync s3://YOUR_NETID-ai-medical/processed/ ./data/processed/
 ```
 
 ### 6. Fine-tune Model (Local RTX 5000)
@@ -116,7 +118,7 @@ ssh -i "YOUR_KEY.pem" ubuntu@<EC2_PUBLIC_IP>
 ./setup_openwebui.sh
 
 # Transfer and load model
-ollama create gemma-4-2b -f /path/to/model.gguf
+ollama create gemma-4-2b-medical -f /path/to/model.gguf
 ```
 
 ### 8. Access the Chatbot
@@ -144,4 +146,4 @@ Open browser: `http://<EC2_PUBLIC_IP>:8080`
 ## License
 
 - **Model:** Gemma Terms — Before using Gemma, accept the license at https://huggingface.co/google/gemma-4-2b
-- **Dataset:** [koutch/stackoverflow_python](https://huggingface.co/datasets/koutch/stackoverflow_python) (HuggingFace)
+- **Dataset:** [ruslanmv/ai-medical-dataset](https://huggingface.co/datasets/ruslanmv/ai-medical-dataset) (CC-BY 4.0)
