@@ -4,25 +4,13 @@ Filters, transforms, and splits data for LLM fine-tuning.
 """
 
 import argparse
-import json
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType
 from pyspark.sql.window import Window
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-PROMPT_TEMPLATE = "### Question: {question}\n### Answer: {answer}\n"
-
-
-def parse_json_string(col):
-    """Parse JSON string if column contains JSON-formatted string."""
-    return F.when(
-        F.col(col).startswith('{'),
-        F.from_json(F.col(col), schema='question_body STRING, answer_body STRING')
-    ).otherwise(F.col(col))
 
 
 def create_spark_session():
@@ -38,8 +26,8 @@ def create_spark_session():
 def load_arrow_data(spark, input_path):
     """Load raw arrow files into Spark DataFrame."""
     logger.info(f"Loading arrow files from {input_path}")
-    df = spark.read.format("arrow").load(input_path)
-    logger.info(f"Loaded {df.count()} rows")
+    df = spark.read.format("parquet").load(input_path)
+    logger.info(f"Loaded data from {input_path}")
     return df
 
 
@@ -47,7 +35,6 @@ def filter_by_score(df, min_score):
     """Filter rows by minimum answer score."""
     logger.info(f"Filtering by answer_score >= {min_score}")
     filtered = df.filter(F.col("answer_score") >= min_score)
-    logger.info(f"After filtering: {filtered.count()} rows")
     return filtered
 
 
@@ -80,7 +67,6 @@ def remove_empty_rows(df):
         (F.trim(F.col("question_parsed")) != '') &
         (F.trim(F.col("answer_parsed")) != '')
     )
-    logger.info(f"After removing empty rows: {cleaned.count()} rows")
     return cleaned
 
 
@@ -112,22 +98,13 @@ def stratified_split(df, train_ratio, val_ratio, seed=42):
     """
     logger.info(f"Performing stratified split (train={train_ratio}, val={val_ratio})")
 
-    # Create score buckets for stratification
-    num_buckets = 100
-    bucket_col = "score_bucket"
-
-    df_with_bucket = df.withColumn(
-        bucket_col,
-        F.ntile(num_buckets).over(Window.partitionBy())
-    )
-
     # Add random column for split assignment
-    df_ranked = df_with_bucket.withColumn("rand", F.rand(seed))
+    df_ranked = df.withColumn("rand", F.rand(seed))
 
     # Calculate cumulative probabilities
     test_ratio = 1.0 - train_ratio - val_ratio
 
-    # Assign split based on stratified sampling
+    # Assign split based on random sampling (stratified by bucket not implemented)
     df_split = df_ranked.withColumn(
         "split",
         F.when(F.col("rand") < train_ratio, "train")
@@ -135,8 +112,8 @@ def stratified_split(df, train_ratio, val_ratio, seed=42):
         .otherwise("test")
     )
 
-    # Clean up intermediate columns
-    return df_split.drop(bucket_col, "rand")
+    # Clean up intermediate column
+    return df_split.drop("rand")
 
 
 def write_parquet_partitioned(df, output_path):
