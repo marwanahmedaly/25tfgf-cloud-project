@@ -1,5 +1,5 @@
 """
-PySpark preprocessing pipeline for StackOverflow Python Q&A dataset.
+PySpark preprocessing pipeline for Medical Q&A dataset.
 Filters, transforms, and splits data for LLM fine-tuning.
 """
 
@@ -7,7 +7,6 @@ import argparse
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.window import Window
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 def create_spark_session():
     """Create SparkSession with adaptive query execution enabled."""
     return (SparkSession.builder
-            .appName("stackoverflow-preprocess")
+            .appName("medical-preprocess")
             .config("spark.sql.adaptive.enabled", "true")
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
             .config("spark.sql.adaptive.skewJoin.enabled", "true")
@@ -24,63 +23,58 @@ def create_spark_session():
 
 
 def load_arrow_data(spark, input_path):
-    """Load raw arrow files into Spark DataFrame."""
-    logger.info(f"Loading arrow files from {input_path}")
+    """Load raw parquet files into Spark DataFrame."""
+    logger.info(f"Loading parquet files from {input_path}")
     df = spark.read.format("parquet").load(input_path)
     logger.info(f"Loaded data from {input_path}")
     return df
 
 
-def filter_by_score(df, min_score):
-    """Filter rows by minimum answer score."""
-    logger.info(f"Filtering by answer_score >= {min_score}")
-    filtered = df.filter(F.col("answer_score") >= min_score)
+def apply_length_filters(df, min_context_length, max_context_length, min_question_length):
+    """Filter rows by context and question length constraints."""
+    logger.info(f"Filtering by length (context: {min_context_length}-{max_context_length}, question: >={min_question_length})")
+    filtered = df.filter(
+        (F.length(F.col("context")) >= min_context_length) &
+        (F.length(F.col("context")) <= max_context_length) &
+        (F.length(F.col("question")) >= min_question_length)
+    )
     return filtered
 
 
 def parse_bodies(df):
-    """Parse question_body and answer_body (handle JSON string format)."""
-    logger.info("Parsing question and answer bodies")
-
-    # Check if column contains JSON string format
+    """Parse question and context columns for medical dataset."""
+    logger.info("Parsing question and context columns")
     parsed = df.withColumn(
         "question_parsed",
-        F.when(
-            F.col("question_body").startswith('{'),
-            F.get_json_object(F.col("question_body"), "$.question_body")
-        ).otherwise(F.col("question_body"))
+        F.col("question")
     ).withColumn(
-        "answer_parsed",
-        F.when(
-            F.col("answer_body").startswith('{'),
-            F.get_json_object(F.col("answer_body"), "$.answer_body")
-        ).otherwise(F.col("answer_body"))
+        "context_parsed",
+        F.col("context")
     )
-
     return parsed
 
 
 def remove_empty_rows(df):
-    """Remove rows with empty question or answer."""
-    logger.info("Removing empty question/answer rows")
+    """Remove rows with empty question or context."""
+    logger.info("Removing empty question/context rows")
     cleaned = df.filter(
         (F.trim(F.col("question_parsed")) != '') &
-        (F.trim(F.col("answer_parsed")) != '')
+        (F.trim(F.col("context_parsed")) != '')
     )
     return cleaned
 
 
 def create_prompt(df):
-    """Create prompt template from question and answer."""
+    """Create prompt template from question and context."""
     logger.info("Creating prompt template")
     return df.withColumn(
         "prompt",
         F.concat(
-            F.lit("### Question: "),
+            F.lit("### Medical Question: "),
             F.col("question_parsed"),
-            F.lit("\n### Answer: "),
-            F.col("answer_parsed"),
-            F.lit("\n")
+            F.lit("\n\n### Clinical Context: "),
+            F.col("context_parsed"),
+            F.lit("\n\n### Answer:\n")
         )
     )
 
@@ -124,11 +118,12 @@ def write_parquet_partitioned(df, output_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Preprocess StackOverflow Q&A for LLM fine-tuning")
-    parser.add_argument("--input", required=True, help="Input path to arrow files (local or S3)")
+    parser = argparse.ArgumentParser(description="Preprocess Medical Q&A for LLM fine-tuning")
+    parser.add_argument("--input", required=True, help="Input path to parquet files (local or S3)")
     parser.add_argument("--output", required=True, help="Output path for Parquet files")
-    parser.add_argument("--min-answer-score", type=int, default=5, help="Minimum answer score filter")
-    parser.add_argument("--max-tokens", type=int, default=2048, help="Maximum token length (for reference)")
+    parser.add_argument("--min-context-length", type=int, default=200, help="Minimum context length")
+    parser.add_argument("--max-context-length", type=int, default=4096, help="Maximum context length")
+    parser.add_argument("--min-question-length", type=int, default=20, help="Minimum question length")
     parser.add_argument("--train-ratio", type=float, default=0.8, help="Train split ratio")
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Validation split ratio")
 
@@ -145,8 +140,8 @@ def main():
         # Load data
         df = load_arrow_data(spark, args.input)
 
-        # Filter by score
-        df = filter_by_score(df, args.min_answer_score)
+        # Apply length filters
+        df = apply_length_filters(df, args.min_context_length, args.max_context_length, args.min_question_length)
 
         # Parse bodies
         df = parse_bodies(df)
@@ -166,13 +161,9 @@ def main():
         # Select final columns
         output_df = df.select(
             "id",
-            "question_id",
-            "answer_id",
             "question_parsed",
-            "answer_parsed",
+            "context_parsed",
             "prompt",
-            "question_score",
-            "answer_score",
             "split"
         )
 
