@@ -19,8 +19,14 @@ sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 6)
 plt.rcParams['font.size'] = 11
 
+# Module-level constants
+CONTEXT_MAX_LENGTH = 4096
+QUESTION_MAX_LENGTH = 500
+PIE_EXPLODE_RATIO = 0.02
+PIE_START_ANGLE = 90
 
-def get_token_lengths(dataset, tokenizer):
+
+def get_token_lengths(dataset: pd.DataFrame, tokenizer) -> list[int]:
     """Compute token lengths for all prompts using Gemma tokenizer."""
     logger.info("Computing token lengths...")
     token_lengths = []
@@ -41,16 +47,17 @@ def get_token_lengths(dataset, tokenizer):
     return token_lengths
 
 
-def plot_token_length_distribution(token_lengths, output_dir):
+def plot_token_length_distribution(token_lengths: list[int], output_dir: str) -> dict[str, float]:
     """Generate token length distribution histogram."""
     logger.info("Plotting token length distribution...")
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    # Compute statistics
-    mean_len = sum(token_lengths) / len(token_lengths)
-    p95_len = sorted(token_lengths)[int(len(token_lengths) * 0.95)]
-    p99_len = sorted(token_lengths)[int(len(token_lengths) * 0.99)]
+    # Compute statistics using pandas Series
+    token_series = pd.Series(token_lengths)
+    mean_len = token_series.mean()
+    p95_len = token_series.quantile(0.95)
+    p99_len = token_series.quantile(0.99)
 
     ax.hist(token_lengths, bins=50, edgecolor='white', alpha=0.8, color='#6366f1')
     ax.axvline(mean_len, color='#ef4444', linestyle='--', linewidth=2, label=f'Mean: {mean_len:.0f}')
@@ -71,11 +78,11 @@ def plot_token_length_distribution(token_lengths, output_dir):
     return {'mean': mean_len, 'p95': p95_len, 'p99': p99_len}
 
 
-def plot_context_length_distribution(dataset, output_dir):
+def plot_context_length_distribution(dataset: pd.DataFrame, output_dir: str) -> dict[str, float]:
     """Generate context length distribution histogram."""
     logger.info("Plotting context length distribution...")
 
-    context_lengths = dataset['context'].str.len().clip(upper=4096)
+    context_lengths = dataset['context'].str.len().clip(upper=CONTEXT_MAX_LENGTH)
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -84,10 +91,11 @@ def plot_context_length_distribution(dataset, output_dir):
     ax.set_ylabel('Frequency')
     ax.set_title('Clinical Context Length Distribution')
 
-    # Add percentiles
-    mean_len = context_lengths.mean()
-    p95_len = context_lengths.quantile(0.95)
-    p99_len = context_lengths.quantile(0.99)
+    # Add percentiles (computed once)
+    percentiles = context_lengths.quantile([0.5, 0.95, 0.99])
+    mean_len = percentiles[0.5]
+    p95_len = percentiles[0.95]
+    p99_len = percentiles[0.99]
 
     ax.axvline(mean_len, color='#ef4444', linestyle='--', linewidth=2, label=f'Mean: {mean_len:.0f}')
     ax.axvline(p95_len, color='#f59e0b', linestyle='--', linewidth=2, label=f'P95: {p95_len:.0f}')
@@ -103,11 +111,11 @@ def plot_context_length_distribution(dataset, output_dir):
     return {'mean': mean_len, 'p95': p95_len, 'p99': p99_len}
 
 
-def plot_question_length_distribution(dataset, output_dir):
+def plot_question_length_distribution(dataset: pd.DataFrame, output_dir: str) -> dict[str, float]:
     """Generate question length distribution histogram."""
     logger.info("Plotting question length distribution...")
 
-    question_lengths = dataset['question'].str.len().clip(upper=500)
+    question_lengths = dataset['question'].str.len().clip(upper=QUESTION_MAX_LENGTH)
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -116,10 +124,11 @@ def plot_question_length_distribution(dataset, output_dir):
     ax.set_ylabel('Frequency')
     ax.set_title('Medical Question Length Distribution')
 
-    # Add percentiles
-    mean_len = question_lengths.mean()
-    p95_len = question_lengths.quantile(0.95)
-    p99_len = question_lengths.quantile(0.99)
+    # Add percentiles (computed once)
+    percentiles = question_lengths.quantile([0.5, 0.95, 0.99])
+    mean_len = percentiles[0.5]
+    p95_len = percentiles[0.95]
+    p99_len = percentiles[0.99]
 
     ax.axvline(mean_len, color='#ef4444', linestyle='--', linewidth=2, label=f'Mean: {mean_len:.0f}')
     ax.axvline(p95_len, color='#f59e0b', linestyle='--', linewidth=2, label=f'P95: {p95_len:.0f}')
@@ -135,7 +144,7 @@ def plot_question_length_distribution(dataset, output_dir):
     return {'mean': mean_len, 'p95': p95_len, 'p99': p99_len}
 
 
-def plot_split_distribution(splits_data, output_dir):
+def plot_split_distribution(splits_data: dict[str, int], output_dir: str) -> None:
     """Generate split distribution pie chart."""
     logger.info("Plotting split distribution...")
 
@@ -144,11 +153,11 @@ def plot_split_distribution(splits_data, output_dir):
     labels = list(splits_data.keys())
     sizes = list(splits_data.values())
     colors = ['#6366f1', '#10b981', '#f59e0b']
-    explode = (0.02, 0.02, 0.02)
+    explode = (PIE_EXPLODE_RATIO, PIE_EXPLODE_RATIO, PIE_EXPLODE_RATIO)
 
     wedges, texts, autotexts = ax.pie(
         sizes, explode=explode, labels=labels, colors=colors,
-        autopct='%1.1f%%', startangle=90, textprops={'fontsize': 14}
+        autopct='%1.1f%%', startangle=PIE_START_ANGLE, textprops={'fontsize': 14}
     )
 
     for autotext in autotexts:
