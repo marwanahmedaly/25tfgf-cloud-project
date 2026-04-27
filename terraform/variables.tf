@@ -57,9 +57,9 @@ variable "emr_instance_count" {
 }
 
 variable "s3_bucket_name" {
-  description = "S3 bucket name for data storage"
+  description = "S3 bucket name for medical dataset storage"
   type        = string
-  default     = "25tfgf-emr-data-bucket"
+  default     = "25tfgf-ai-medical"
 }
 
 variable "key_name" {
