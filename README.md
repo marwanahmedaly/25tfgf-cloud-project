@@ -69,13 +69,19 @@ terraform plan -var="net_id=YOUR_NETID" -var="key_name=YOUR_KEY"
 terraform apply -var="net_id=YOUR_NETID" -var="key_name=YOUR_KEY"
 ```
 
-### 2. Upload Raw Data to S3
+### 2. Upload Bootstrap Script to S3
+
+```bash
+aws s3 cp spark/bootstrap_emr.sh s3://YOUR_NETID-so-python/
+```
+
+### 3. Upload Raw Data to S3
 
 ```bash
 aws s3 cp ./data/stackoverflow_python/ s3://YOUR_NETID-so-python/raw/ --recursive
 ```
 
-### 3. Run EMR Preprocessing
+### 4. Run EMR Preprocessing
 
 ```bash
 aws emr create-cluster ...
@@ -85,13 +91,13 @@ spark-submit s3://YOUR_NETID-so-python/spark/preprocess.py \
     --output s3://YOUR_NETID-so-python/processed/
 ```
 
-### 4. Download Processed Data
+### 5. Download Processed Data
 
 ```bash
 aws s3 sync s3://YOUR_NETID-so-python/processed/ ./data/processed/
 ```
 
-### 5. Fine-tune Model (Local RTX 5000)
+### 6. Fine-tune Model (Local RTX 5000)
 
 ```bash
 cd colab
@@ -99,7 +105,7 @@ jupyter notebook fine_tune.ipynb
 # Follow notebook instructions
 ```
 
-### 6. Deploy to EC2
+### 7. Deploy to EC2
 
 ```bash
 # SSH to EC2
@@ -113,7 +119,7 @@ ssh -i "YOUR_KEY.pem" ubuntu@<EC2_PUBLIC_IP>
 ollama create gemma-4-2b -f /path/to/model.gguf
 ```
 
-### 7. Access the Chatbot
+### 8. Access the Chatbot
 
 Open browser: `http://<EC2_PUBLIC_IP>:8080`
 

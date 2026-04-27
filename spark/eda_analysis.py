@@ -10,7 +10,6 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from datasets import load_dataset
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -137,7 +136,7 @@ def main():
     parser.add_argument(
         "--input",
         required=True,
-        help="Path to arrow dataset (local path or HF dataset name)"
+        help="Path to Parquet dataset (output from preprocess.py)"
     )
     parser.add_argument("--output-dir", default="./plots", help="Output directory for plots")
     parser.add_argument("--tokenizer", default="google/gemma-2b", help="Tokenizer for tokenization")
@@ -151,9 +150,9 @@ def main():
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load dataset (supports both local arrow files and HF dataset name)
+    # Load dataset (Parquet format from preprocess.py)
     logger.info("Loading dataset...")
-    ds = load_dataset("arrow", data_dir=args.input)['train']
+    ds = pd.read_parquet(args.input)
 
     # Load tokenizer
     logger.info(f"Loading tokenizer: {args.tokenizer}")
