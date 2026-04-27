@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenWebUI Service
+After=network-online.target ollama.service
+Wants=network-online.target
+Requires=ollama.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/local/bin/open-webui serve
+Restart=always
+RestartSec=10
+Environment="OLLAMA_BASE_URL=http://localhost:11434"
+WorkingDirectory=/home/ubuntu
+
+[Install]
+WantedBy=multi-user.target
