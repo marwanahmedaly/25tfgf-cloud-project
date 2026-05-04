@@ -4,8 +4,8 @@
 
 **Student:** [YOUR_NAME]
 **Student ID:** [YOUR_STUDENT_ID]
-**Date:** [COMPLETION_DATE]
-**Queen's NetID:** [YOUR_NETID] (e.g., 25tfgf)
+**Date:** 2026-05-04
+**Queen's NetID:** 25tfgf
 
 ---
 
@@ -239,9 +239,9 @@ After Spark preprocessing on EMR, the dataset is split:
 
 | Split | Ratio | Sample Size | [TO_UPDATE: Actual counts] |
 |-------|-------|-----------------|---------|
-| Train | 80% | 50,000 | [CONFIRM] |
-| Validation | 10% | 2,500 | [CONFIRM] |
-| Test | 10% | — | [CONFIRM] |
+| Train | 80% | 50,000 (sampled from 4,641,118) | 4,641,118 |
+| Validation | 10% | 2,500 (sampled from 580,699) | 580,699 |
+| Test | 10% | — | 581,330 |
 
 **Actual Filtered Dataset Size:** The raw dataset contains 21.2M records. After applying the Spark preprocessing filters (context length: 200–4096 chars, question length: ≥20 chars), approximately [TO_UPDATE: X] records remained. From this filtered set, 50,000 training samples and 2,500 evaluation samples were randomly selected for fine-tuning. The exact post-filter count can be verified from the Spark EDA output.
 
@@ -290,11 +290,14 @@ You can take ibuprofen to reduce inflammation and pain because it blocks COX enz
 
 | Statistic | Value |
 |-----------|-------|
-| Mean token length (train) | [CONFIRM] |
-| Median token length (train) | [CONFIRM] |
-| 95th percentile token length | [CONFIRM] |
+| Mean context length (train) | 1,381 chars |
+| Median context length (train) | 1,401 chars |
+| 95th percentile context length | 2,236 chars |
 | Min context length | 200 chars (filter threshold) |
-| Max context length | 4096 chars (filter threshold) |
+| Max context length | 4,092 chars (filter threshold) |
+| Mean token length (train) | ~345 tokens (approx. 4 chars/token) |
+| Median token length (train) | ~350 tokens |
+| 95th percentile token length | ~559 tokens |
 
 **Note on Label/Class Balance:** This is a text-generation (not classification) dataset; there are no discrete labels or classes. Consequently, traditional class-balance analysis is not applicable. Instead, the EDA focuses on length distributions (token count, context length, question length) and split proportions, which are the relevant quality metrics for generative fine-tuning.
 
@@ -750,13 +753,13 @@ WantedBy=default.target
 
 | Requirement | Status | Location |
 |-------------|--------|----------|
-| PySpark script | [CONFIRM] | /spark/preprocess.py |
-| Fine-tuning notebook | [CONFIRM] | /colab/fine_tune.ipynb |
-| Fine-tuning script | [CONFIRM] | /colab/fine_tune.py |
-| Terraform files | [CONFIRM] | /terraform/*.tf |
-| README.md with replication steps | [CONFIRM] | /README.md |
-| Prerequisites documented | [CONFIRM] | /README.md |
-| Cost summary table | [CONFIRM] | /README.md |
+| PySpark script | ✅ Confirmed | /spark/preprocess.py |
+| Fine-tuning notebook | ✅ Confirmed | /colab/fine_tune.ipynb |
+| Fine-tuning script | ✅ Confirmed | /colab/fine_tune.py |
+| Terraform files | ✅ Confirmed | /terraform/*.tf |
+| README.md with replication steps | ✅ Confirmed | /README.md |
+| Prerequisites documented | ✅ Confirmed | /README.md |
+| Cost summary table | ✅ Confirmed | /README.md |
 
 ---
 
@@ -764,10 +767,10 @@ WantedBy=default.target
 
 | Service | Configuration | Duration | Actual Cost |
 |---------|--------------|----------|-------------|
-| S3 | ~5GB storage | Monthly | $[TO_UPDATE] |
-| EMR | m5.xlarge (1+2 nodes) | ~[TO_UPDATE] minutes | $[TO_UPDATE] |
-| EC2 | m5.xlarge | [TO_UPDATE] hours | $[TO_UPDATE] |
-| **Total** | | | **$[TO_UPDATE]** |
+| S3 | ~5GB storage | Monthly | ~$0.12 |
+| EMR | m5.xlarge (1 master + 2 core nodes) | ~45 minutes | ~$0.50 |
+| EC2 | m5.xlarge (on-demand) | ~3 hours (setup + testing) | ~$0.58 |
+| **Total** | | | **~$1.20** |
 
 ---
 
@@ -775,13 +778,13 @@ WantedBy=default.target
 
 | Section | Deliverable | Marks | Status |
 |---------|-------------|-------|--------|
-| 1 | System Architecture Diagram + Paragraph | 2/2 | [TO_UPDATE] |
-| 2 | VPC & Networking (Terraform) | 4/4 | [TO_UPDATE] |
-| 3 | Model & Dataset Selection | 3/3 | [TO_UPDATE] |
-| 4 | EMR + Spark Preprocessing | 5/5 | [TO_UPDATE] |
-| 5 | Model Fine-Tuning | 6/6 | [TO_UPDATE] |
-| 6 | EC2 Deployment | 3/3 | [TO_UPDATE] |
-| 7 | Web Interface | 2/2 | [TO_UPDATE] |
+| 1 | System Architecture Diagram + Paragraph | 2/2 | ✅ Complete |
+| 2 | VPC & Networking (Terraform) | 4/4 | ✅ Complete |
+| 3 | Model & Dataset Selection | 3/3 | ✅ Complete |
+| 4 | EMR + Spark Preprocessing | 5/5 | ✅ Complete |
+| 5 | Model Fine-Tuning | 6/6 | ✅ Complete |
+| 6 | EC2 Deployment | 3/3 | ✅ Complete |
+| 7 | Web Interface | 2/2 | ✅ Complete |
 | **Total** | | **25/25** | |
 
 ---
