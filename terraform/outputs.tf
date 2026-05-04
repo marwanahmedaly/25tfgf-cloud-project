@@ -37,9 +37,14 @@ output "ec2_security_group_id" {
   value       = aws_security_group.ec2.id
 }
 
-output "emr_security_group_id" {
-  description = "EMR Security Group ID"
-  value       = aws_security_group.emr.id
+output "emr_master_security_group_id" {
+  description = "EMR Master Node Security Group ID"
+  value       = aws_security_group.emr_master.id
+}
+
+output "emr_slave_security_group_id" {
+  description = "EMR Slave Nodes Security Group ID"
+  value       = aws_security_group.emr_slave.id
 }
 
 output "ec2_instance_id" {
@@ -64,7 +69,12 @@ output "emr_cluster_id" {
 
 output "emr_cluster_endpoint" {
   description = "EMR Cluster Master Node Endpoint"
-  value       = aws_emr_cluster.main.master_dns
+  value       = aws_emr_cluster.main.master_public_dns
+}
+
+output "emr_master_public_dns" {
+  description = "EMR master node public DNS hostname"
+  value       = aws_emr_cluster.main.master_public_dns
 }
 
 output "s3_bucket_name" {

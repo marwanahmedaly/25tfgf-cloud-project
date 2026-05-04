@@ -35,25 +35,31 @@ variable "public_subnet_cidrs" {
 variable "ec2_instance_type" {
   description = "EC2 instance type for Ollama"
   type        = string
-  default     = "g4dn.xlarge"
+  default     = "m5.xlarge"
 }
 
 variable "emr_instance_type" {
   description = "EMR core node instance type"
   type        = string
-  default     = "m5.xlarge"
+  default     = "c5.xlarge"
 }
 
 variable "emr_master_instance_type" {
   description = "EMR master node instance type"
   type        = string
-  default     = "m5.xlarge"
+  default     = "c5.xlarge"
 }
 
 variable "emr_instance_count" {
   description = "Number of EMR core nodes (spot)"
   type        = number
-  default     = 2
+  default     = 1
+}
+
+variable "emr_spot_bid_price" {
+  description = "Bid price for EMR spot instances (as a percentage of on-demand)"
+  type        = string
+  default     = "0.30"
 }
 
 variable "s3_bucket_name" {
@@ -65,13 +71,13 @@ variable "s3_bucket_name" {
 variable "key_name" {
   description = "EC2 key pair name"
   type        = string
-  default     = "25tfgf-key"
+  default     = "lab6_key_pair"
 }
 
 variable "ec2_ami_id" {
   description = "EC2 AMI ID for Ollama instance (Ubuntu 22.04 LTS)"
   type        = string
-  default     = "ami-0c7217a1c57d5bd80"
+  default     = "ami-0b89099a7c0cba64a"
 }
 
 variable "db_subnet_cidrs" {

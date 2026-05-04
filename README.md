@@ -83,23 +83,65 @@ aws s3 cp spark/bootstrap_emr.sh s3://YOUR_NETID-ai-medical/
 aws s3 cp ./data/ai-medical-dataset/data/ s3://YOUR_NETID-ai-medical/raw/ --recursive
 ```
 
-### 4. Run EMR Preprocessing
+### 4. Create EMR Cluster
 
 ```bash
-aws emr create-cluster ...
-# Or use the processed data workflow
-spark-submit s3://YOUR_NETID-ai-medical/spark/preprocess.py \
-    --input s3://YOUR_NETID-ai-medical/raw/ \
-    --output s3://YOUR_NETID-ai-medical/processed/
+# Get values from Terraform output
+VPC_ID=$(terraform output -raw vpc_id)
+SUBNET_ID=$(terraform output -raw public_subnet_1_id)
+S3_BUCKET="YOUR_NETID-ai-medical"
+EMR_SERVICE_ROLE="YOUR_NETID-emr-service-role"
+EMR_INSTANCE_PROFILE="YOUR_NETID-emr-instance-profile"
+
+aws emr create-cluster \
+  --name "YOUR_NETID-emr-cluster" \
+  --release-label emr-7.2.0 \
+  --instance-count 3 \
+  --instance-type m5.xlarge \
+  --ec2-attributes "SubnetId=${SUBNET_ID},InstanceProfile=${EMR_INSTANCE_PROFILE}" \
+  --service-role "arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/${EMR_SERVICE_ROLE}" \
+  --bootstrap-actions "Path=s3://${S3_BUCKET}/bootstrap_emr.sh,Name=Install-dependencies" \
+  --applications Name=Spark Name=JupyterHub \
+  --configurations '{"Classification":"spark-env","Properties":{"PYSPARK_PYTHON":"/usr/bin/python3"}}' \
+  --region us-east-1
 ```
 
-### 5. Download Processed Data
+### 5. Run PySpark Preprocessing
+
+```bash
+# Wait for cluster to be in WAITING state, then:
+aws emr add-steps \
+  --cluster-id j-XXXXXXXX \
+  --steps Name=SparkPreprocessing,Type=Spark,Args=[\
+    --deploy-mode,cluster,\
+    --conf,spark.executor.memory=4g,\
+    --conf,spark.executor.cores=2,\
+    s3://YOUR_NETID-ai-medical/spark/preprocess.py,\
+    --input,s3://YOUR_NETID-ai-medical/raw/,\
+    --output,s3://YOUR_NETID-ai-medical/processed/,\
+    --min-context-length,200,\
+    --max-context-length,4096,\
+    --min-question-length,20,\
+    --train-ratio,0.8,\
+    --val-ratio,0.1\
+  ] \
+  --region us-east-1
+```
+
+### 6. Terminate EMR Cluster (IMPORTANT)
+
+```bash
+# CRITICAL: Terminate immediately after preprocessing to avoid charges
+aws emr terminate-clusters --cluster-ids j-XXXXXXXX --region us-east-1
+```
+
+### 7. Download Processed Data
 
 ```bash
 aws s3 sync s3://YOUR_NETID-ai-medical/processed/ ./data/processed/
 ```
 
-### 6. Fine-tune Model (Local RTX 5000)
+### 8. Fine-tune Model (Local RTX 5000)
 
 ```bash
 cd colab
@@ -107,7 +149,7 @@ jupyter notebook fine_tune.ipynb
 # Follow notebook instructions
 ```
 
-### 7. Deploy to EC2
+### 9. Deploy to EC2
 
 ```bash
 # SSH to EC2
@@ -121,7 +163,7 @@ ssh -i "YOUR_KEY.pem" ubuntu@<EC2_PUBLIC_IP>
 ollama create gemma-4-2b-medical -f /path/to/model.gguf
 ```
 
-### 8. Access the Chatbot
+### 10. Access the Chatbot
 
 Open browser: `http://<EC2_PUBLIC_IP>:8080`
 
@@ -131,7 +173,7 @@ Open browser: `http://<EC2_PUBLIC_IP>:8080`
 |---------|--------------|----------------|----------|
 | S3 | ~5GB storage | ~$0.10/month | Persistent |
 | EMR | m5.xlarge (1+2 nodes, spot) | ~$0.30-0.50/hour | ~15-30 minutes |
-| EC2 | g4dn.xlarge (T4 GPU) | ~$0.526/hour | Stop when not in use |
+| EC2 | m5.xlarge (4 vCPU, 16GB RAM) | ~$0.526/hour | Stop when not in use |
 
 **Total project cost with credits:** ~$2-5 | **Tip:** Always terminate EMR after preprocessing to avoid idle charges.
 

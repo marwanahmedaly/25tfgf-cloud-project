@@ -6,6 +6,7 @@ Generates token length distribution, context/question length histograms, and spl
 import argparse
 import logging
 import os
+import random
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -27,15 +28,17 @@ PIE_START_ANGLE = 90
 
 
 def get_token_lengths(dataset: pd.DataFrame, tokenizer) -> list[int]:
-    """Compute token lengths for all prompts using Gemma tokenizer."""
-    logger.info("Computing token lengths...")
+    """Compute token lengths for prompts using Gemma tokenizer (sampled to avoid OOM)."""
+    logger.info("Computing token lengths (sampling every 100th record)...")
     token_lengths = []
+    sample_rate = 100
 
     for idx, item in enumerate(dataset):
+        if idx % sample_rate != 0:
+            continue
         question = item.get('question', '')
         context = item.get('context', '')
 
-        # Format prompt same as preprocessing
         prompt = f"### Medical Question: {question}\n\n### Clinical Context: {context}\n\n### Answer: "
 
         tokens = tokenizer.encode(prompt, add_special_tokens=True)
@@ -44,6 +47,7 @@ def get_token_lengths(dataset: pd.DataFrame, tokenizer) -> list[int]:
         if (idx + 1) % 10000 == 0:
             logger.info(f"Processed {idx + 1} examples")
 
+    logger.info(f"Sampled {len(token_lengths)} records for token length analysis")
     return token_lengths
 
 
@@ -183,12 +187,15 @@ def main():
     )
     parser.add_argument("--output-dir", default="./plots", help="Output directory for plots")
     parser.add_argument("--tokenizer", default="google/gemma-4-2b", help="Tokenizer for tokenization")
+    parser.add_argument("--sample-size", type=int, default=100000,
+                        help="Number of samples to use for EDA (default: 100000)")
 
     args = parser.parse_args()
 
     logger.info("Starting EDA visualization")
     logger.info(f"Input: {args.input}")
     logger.info(f"Output: {args.output_dir}")
+    logger.info(f"Sample size: {args.sample_size:,}")
 
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
@@ -196,6 +203,16 @@ def main():
     # Load dataset (Parquet format from preprocess.py)
     logger.info("Loading dataset...")
     ds = pd.read_parquet(args.input)
+    total_records = len(ds)
+    logger.info(f"Total records in dataset: {total_records:,}")
+
+    # Sample data for EDA
+    if args.sample_size and args.sample_size < total_records:
+        logger.info(f"Sampling {args.sample_size:,} records for EDA...")
+        ds = ds.sample(n=args.sample_size, random_state=42)
+        logger.info(f"Sampled {len(ds):,} records for analysis")
+    else:
+        logger.info("Using full dataset for EDA")
 
     # Load tokenizer
     logger.info(f"Loading tokenizer: {args.tokenizer}")
