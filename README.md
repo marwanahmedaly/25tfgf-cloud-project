@@ -2,24 +2,24 @@
 
 **Course:** CISC 886 – Cloud Computing, Queen's University
 **Project:** Cloud-based Medical Chatbot (Healthcare domain)
-**Model:** unsloth/gemma-2-2b-it (Google Gemma-2-2B, instruction-tuned via Unsloth)
+**Model:** unsloth/Llama-3.2-1B-Instruct (Meta Llama 3.2 1B, instruction-tuned via Unsloth)
 **Dataset:** ruslanmv/ai-medical-dataset (21.2M medical Q&A pairs)
-**Training:** Google Colab with Unsloth (`/colab/fine_tune_4.py`)
-**Inference:** EC2 m5.xlarge (Ubuntu 22.04) + Ollama + OpenWebUI
+**Training:** Local workstation (RTX 5000 Ada, 16 GB VRAM) with Unsloth (`/colab/fine_tune.py`)
+**Inference:** EC2 m5.xlarge (Ubuntu 22.04) + Ollama + OpenWebUI (Docker)
 
 ---
 
 ## Overview
 
-This document provides a complete step-by-step implementation tutorial aligned with the CISC 886 project deliverables. Each section maps to a deliverable section in `CISC-886-Project-Deliverable.md`.
+This document provides a complete step-by-step implementation tutorial aligned with the CISC 886 project deliverables. Each section maps to a deliverable section in `CISC-886-Report.md`.
 
 ### Architecture Summary
 
 ```
-HuggingFace Dataset → S3 (raw) → EMR/Spark → S3 (processed) → Google Colab (Unsloth, 100k sample) → EC2/Ollama → Browser/OpenWebUI
+HuggingFace Dataset → S3 (raw) → EMR/Spark → S3 (processed) → Local Workstation (Unsloth QLoRA, 50k sample) → S3 (model artifacts) → EC2/Ollama → Browser/OpenWebUI
 ```
 
-> **100k Sample Strategy:** Both EDA analysis and model fine-tuning use a 100k random sample from the processed dataset for computational efficiency while maintaining representative results.
+> **50k Sample Strategy:** Model fine-tuning uses 50,000 training samples and 2,500 evaluation samples from the processed dataset. This cap fits comfortably within the RTX 5000 Ada's 16 GB VRAM while still achieving meaningful domain adaptation.
 
 ### Deliverable Mark Breakdown
 
@@ -57,7 +57,7 @@ HuggingFace Dataset → S3 (raw) → EMR/Spark → S3 (processed) → Google Col
 │                                                                      │       │
 │                                                                      ▼       │
 │                                                               ┌──────────────┐│
-│                                                               │ Google Colab ││
+│                                                               │Local Workstn││
 │                                                               │(Unsloth QLoRA││
 │                                                               │  Fine-tune)  ││
 │                                                               └──────┬───────┘│
@@ -77,12 +77,12 @@ HuggingFace Dataset → S3 (raw) → EMR/Spark → S3 (processed) → Google Col
 - **EMR Cluster** (master + core nodes)
 - **S3 Bucket** (raw + processed folders)
 - **EC2 Instance** (m5.xlarge for inference)
-- **Google Colab** (for fine-tuning with Unsloth)
+- **Local Workstation** (RTX 5000 Ada, for fine-tuning with Unsloth)
 - **Browser** (for OpenWebUI)
 
 ### Data Flow Paragraph (copy and customize):
 
-> Data flows from the HuggingFace Medical Dataset (ruslanmv/ai-medical-dataset) downloaded locally and uploaded to S3 as raw data. The EMR Spark cluster processes this data through a PySpark pipeline that applies length-based quality filtering, creates a medical prompt template, and splits into train/val/test sets stored as Parquet in S3. The processed data is downloaded to a local GPU machine where QLoRA fine-tuning is performed on Gemma-4-2B. The fine-tuned model is exported to GGUF format and deployed to an EC2 g4dn.xlarge instance, where Ollama serves the model and OpenWebUI provides a browser-based chat interface.
+> Data flows from the HuggingFace Medical Dataset (ruslanmv/ai-medical-dataset) downloaded locally and uploaded to S3 as raw data. The EMR Spark cluster processes this data through a PySpark pipeline that applies length-based quality filtering (context: 200–4096 chars, question: ≥20 chars), parses question/context columns, and splits into train/val/test sets stored as Parquet in S3. The processed data is downloaded to a local workstation (RTX 5000 Ada, 16 GB VRAM) where QLoRA fine-tuning is performed on `unsloth/Llama-3.2-1B-Instruct` using Unsloth. The script applies a custom medical chat template with second-person rewriting and extracts relevant sentences from clinical context. The fine-tuned LoRA adapter and GGUF export are uploaded back to S3, then deployed to an EC2 m5.xlarge instance, where Ollama serves the model and OpenWebUI provides a browser-based chat interface.
 
 ---
 
@@ -161,23 +161,25 @@ terraform apply -var="net_id=25tfgf" -var="key_name=25tfgf-key"
 
 ## Section 3: Model & Dataset Selection (3 marks)
 
-### Model Selection: unsloth/gemma-2-2b-it
+### Model Selection: unsloth/Llama-3.2-1B-Instruct
 
 | Attribute | Value |
 |-----------|-------|
-| **Model Name** | unsloth/gemma-2-2b-it |
-| **Base Model** | google/gemma-2-2b |
-| **Parameters** | 2 billion |
-| **Source** | https://huggingface.co/unsloth/gemma-2-2b-it |
-| **License** | Gemma Terms (requires acceptance on HuggingFace) |
-| **Format** | 4-bit quantized GGUF for QLoRA |
+| **Model Name** | unsloth/Llama-3.2-1B-Instruct |
+| **Base Model** | meta-llama/Llama-3.2-1B-Instruct |
+| **Parameters** | 1 billion |
+| **Source** | https://huggingface.co/unsloth/Llama-3.2-1B-Instruct |
+| **License** | Llama 3.2 License (requires acceptance on HuggingFace) |
+| **Format** | 4-bit quantized GGUF (Q4_K_M) for QLoRA |
 
-**Why unsloth/gemma-2-2b-it?**
+**Why unsloth/Llama-3.2-1B-Instruct?**
 - Under 10B parameters (project requirement)
 - Unsloth's optimized variant provides 2x faster training and 70% less VRAM
-- Instruction-tuned (`-it`) variant provides better foundation for medical fine-tuning
-- Suitable for Colab T4 GPU (16GB VRAM) with 4-bit QLoRA (~6GB VRAM)
+- Instruction-tuned (`-Instruct`) variant provides better foundation for medical fine-tuning
+- Suitable for local RTX 5000 Ada (16GB VRAM) with 4-bit QLoRA (~4-5GB VRAM)
 - Pre-installed dependencies via `pip install unsloth`
+- Strong general-knowledge base with safety tuning for medical Q&A
+- Native chat-template format supports multi-turn conversational interactions
 
 ### Dataset Selection: AI Medical Dataset
 
@@ -200,11 +202,11 @@ terraform apply -var="net_id=25tfgf" -var="key_name=25tfgf-key"
 ### Train/Val/Test Split Strategy
 
 After Spark preprocessing:
-- **Train:** 80%
-- **Validation:** 10%
-- **Test:** 10%
+- **Train:** 80% → capped at 50,000 samples for fine-tuning
+- **Validation:** 10% → capped at 2,500 samples for evaluation
+- **Test:** 10% → held out
 
-**Data Leakage Prevention:** The random split ensures no data from the test set is used during training or hyperparameter tuning.
+**Data Leakage Prevention:** The random split ensures no data from the test set is used during training or hyperparameter tuning. Since this is a text-generation task, no external test set is required.
 
 ### Deliverables for Section 3
 - [ ] Document model name, parameters, source link
@@ -280,7 +282,7 @@ spark-submit \
 python spark/eda_analysis.py \
   --input s3://25tfgf-ai-medical/processed/ \
   --output ./figures/ \
-  --tokenizer google/gemma-4-2b
+  --tokenizer unsloth/Llama-3.2-1B-Instruct
 
 # Download figures
 aws s3 sync ./figures/ s3://25tfgf-ai-medical/figures/
@@ -299,17 +301,12 @@ The preprocessing pipeline performs:
 
 1. **Load** raw Parquet files from S3
 2. **Filter** by context length (200-4096 chars) and question length (≥20 chars)
-3. **Parse** question and context columns
-4. **Create prompt template:**
-   ```
-   ### Medical Question: {question}
-
-   ### Clinical Context: {context}
-
-   ### Answer:
-   ```
+3. **Parse** and alias `question_parsed` and `context_parsed` columns
+4. **Remove** empty rows
 5. **Split** into train/val/test (80/10/10)
 6. **Write** partitioned Parquet to S3
+
+> **Note:** The chat template and second-person rewriting are applied at training time in `colab/fine_tune.py`, not during Spark preprocessing. The Spark pipeline outputs raw parsed question/context pairs.
 
 ### Deliverables for Section 4
 - [ ] PySpark script committed to GitHub with inline explanation
@@ -324,38 +321,26 @@ The preprocessing pipeline performs:
 
 ## Section 5: Model Fine-Tuning (6 marks)
 
-> **Training on Google Colab with Unsloth** — Fine-tuning is performed on Google Colab using the `unsloth/gemma-2-2b-it` model with QLoRA adapters. The training script is at `/colab/fine_tune_4.py`.
+> **Training on Local Workstation with Unsloth** — Fine-tuning is performed on a local workstation (RTX 5000 Ada, 16 GB VRAM) using the `unsloth/Llama-3.2-1B-Instruct` model with QLoRA adapters. The training script is at `/colab/fine_tune.py`.
 
-### Option A: Google Colab (Recommended)
-
-The training script `/colab/fine_tune_4.py` performs the following:
-
-1. **Install dependencies** — `pip install unsloth transformers peft trl accelerate bitsandbytes datasets scipy boto3`
-2. **Download from S3** — Fetches processed data from `25tfgf-ai-medical/processed/`
-3. **Load dataset** — Loads train/val/test splits as HuggingFace Dataset
-4. **Prepare prompts** — Applies medical chat template with system prompt
-5. **Load model** — `unsloth/gemma-2-2b-it` with 4-bit QLoRA
-6. **Fine-tune** — 100k sample, 1 epoch, batch size 16
-7. **Save adapter** — `gemma_lora_medical/` directory
-
-### Option B: Unsloth Docker Container
+### Prerequisites
 
 ```bash
-# Run Unsloth container with GPU support
-docker run -d -e JUPYTER_PASSWORD="mypassword" \
-  -p 8888:8888 -p 8000:8000 -p 2222:22 \
-  -v $(pwd)/work:/workspace/work \
-  --gpus all \
-  unsloth/unsloth
-
-# Access Jupyter Lab at http://localhost:8888
+# Install Unsloth and dependencies
+pip install unsloth transformers peft trl accelerate bitsandbytes datasets scipy boto3
 ```
 
-**Unsloth Benefits:**
-- 2-5x faster training
-- 70% less VRAM consumption
-- Pre-installed dependencies (transformers, peft, trl, bitsandbytes)
-- Native Gemma 2B support
+### What the Script Does (`/colab/fine_tune.py`)
+
+1. **Download from S3** — Fetches processed Parquet data from `25tfgf-ai-medical/processed/`
+2. **Load dataset** — Loads train/val splits as HuggingFace Dataset (50k train / 2.5k eval)
+3. **Text processing** — Extracts relevant sentences and rewrites third-person clinical text to second-person direct advice
+4. **Prepare prompts** — Applies Llama-3.2 chat template with medical system prompt
+5. **Load model** — `unsloth/Llama-3.2-1B-Instruct` with 4-bit QLoRA
+6. **Fine-tune** — 50k sample, 1 epoch, effective batch size 16
+7. **Save adapter** — `./cloud_project/final_lora/` directory
+8. **Export GGUF** — `./cloud_project/medical_assistant_gguf/` for Ollama
+9. **Plot loss curve** — Saves training log and loss figure
 
 ### Step 5.1: Download Processed Data
 
@@ -367,98 +352,146 @@ mkdir -p ./data/processed
 aws s3 sync s3://25tfgf-ai-medical/processed/ ./data/processed/
 ```
 
-### Step 5.2: Open and Run Jupyter Notebook
-
-> **Note:** Fine-tuning is performed on a 100k sample of the processed data to enable training within Colab's GPU time limits while still achieving meaningful domain adaptation.
+### Step 5.2: Run the Training Script
 
 ```bash
 cd colab
-jupyter notebook fine_tune.ipynb
+python fine_tune.py
 ```
 
-### Step 5.3: Follow Notebook Sections
-
-1. **Setup** — Install transformers, peft, bitsandbytes, accelerate
-2. **Load Data** — Download from S3 or load local processed data
-3. **Prepare Dataset** — Convert to HuggingFace Dataset format
-4. **Load Model** — Gemma-4-2B with 4-bit QLoRA configuration
-5. **Configure Training** — Set hyperparameters
-6. **Train** — Fine-tune with LoRA adapter
-7. **Export** — Merge adapter and export to GGUF
+The script implements two robust mechanisms:
+- **Checkpoint resumption:** If interrupted, automatically resumes from the latest `checkpoint-*` folder
+- **Idempotency guard:** If `final_lora/` already contains a saved adapter, training is skipped
 
 ### Hyperparameters
 
 | Parameter | Value |
 |-----------|-------|
-| Learning Rate | 2e-4 |
-| Batch Size | 16 |
-| Gradient Accumulation Steps | 2 |
+| Learning Rate | 2e-5 |
+| Batch Size (per device) | 4 |
+| Gradient Accumulation Steps | 4 |
+| Effective Batch Size | 16 |
 | Epochs | 1 |
-| LoRA Rank | 32 |
-| LoRA Alpha | 32 |
-| Max Sequence Length | 1024 |
+| LoRA Rank (r) | 16 |
+| LoRA Alpha | 16 |
+| LoRA Dropout | 0 |
+| LoRA Target Modules | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj |
+| Max Sequence Length | 1024 (training) / 512 (model load) |
 | Quantization | 4-bit NF4 |
 | Optimizer | adamw_8bit |
-| Warmup Steps | 50 |
+| Warmup Ratio | 0.03 |
 | LR Scheduler | cosine |
+| Weight Decay | 0.01 |
+| Max Grad Norm | 1.0 |
+| Logging Steps | 50 |
+| Eval Steps | 500 |
+| Save Steps | 1000 |
+| Save Total Limit | 2 |
 
-### Fine-Tuning Code (`/colab/fine_tune_4.py`)
+### Fine-Tuning Code (`/colab/fine_tune.py`)
 
 ```python
 from unsloth import FastLanguageModel
 import torch
 
-# Load Gemma 2B instruction-tuned via Unsloth
+# Load Llama-3.2-1B-Instruct via Unsloth
 model, tokenizer = FastLanguageModel.from_pretrained(
-    "unsloth/gemma-2-2b-it",
-    max_seq_length=1024,
+    "unsloth/Llama-3.2-1B-Instruct",
+    max_seq_length=512,
+    dtype=None,
     load_in_4bit=True,
-    use_gradient_checkpointing="unsloth",
+    device_map="cuda",
 )
 
 # Configure LoRA adapters
 model = FastLanguageModel.get_peft_model(
     model,
-    r=32,
-    lora_alpha=32,
+    r=16,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                    "gate_proj", "up_proj", "down_proj"],
+    lora_alpha=16,
     lora_dropout=0,
     bias="none",
+    use_gradient_checkpointing="unsloth",
     random_state=3407,
 )
 
-# Load dataset and train
-trainer.train()
+# Train with SFTTrainer
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=train_data,
+    eval_dataset=eval_data,
+    dataset_text_field="text",
+    max_seq_length=1024,
+    dataset_num_proc=2,
+    packing=True,
+    args=TrainingArguments(
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
+        num_train_epochs=1,
+        learning_rate=2e-5,
+        warmup_ratio=0.03,
+        lr_scheduler_type="cosine",
+        weight_decay=0.01,
+        max_grad_norm=1.0,
+        fp16=not is_bfloat16_supported(),
+        bf16=is_bfloat16_supported(),
+        logging_steps=50,
+        eval_strategy="steps",
+        eval_steps=500,
+        save_strategy="steps",
+        save_steps=1000,
+        save_total_limit=2,
+        optim="adamw_8bit",
+        seed=3407,
+        output_dir="./cloud_project/checkpoints",
+        report_to="none",
+    ),
+)
+
+# Resume from checkpoint if available
+last_checkpoint = get_last_checkpoint("./cloud_project/checkpoints")
+trainer.train(resume_from_checkpoint=last_checkpoint)
 
 # Save adapter
-model.save_pretrained("gemma_lora_medical")
-tokenizer.save_pretrained("gemma_lora_medical")
+trainer.save_model("./cloud_project/final_lora")
+tokenizer.save_pretrained("./cloud_project/final_lora")
+
+# Export GGUF for Ollama
+model.save_pretrained_gguf(
+    "./cloud_project/medical_assistant_gguf",
+    tokenizer,
+    quantization_method="q4_k_m"
+)
 ```
 
-### Step 5.4: Compare Base vs Fine-tuned
+### Step 5.3: Compare Base vs Fine-tuned
 
-Run Cell 9 in the notebook to generate comparison responses:
+Run the test cell at the end of the script to generate comparison responses:
 
 ```
 BASE MODEL RESPONSE:
-Question: What is the mechanism of action of ibuprofen?
+Question: I have a severe headache, sensitivity to light, and nausea. What could this be?
 Response: [generic answer]
 
 FINE-TUNED MODEL RESPONSE:
-Question: What is the mechanism of action of ibuprofen?
-Response: [medical-domain enhanced answer]
+Question: I have a severe headache, sensitivity to light, and nausea. What could this be?
+Response: [concise medical advice in second person]
 ```
 
-### Step 5.5: Export Model for Ollama
+### Step 5.4: Upload Model Artifacts to S3
 
 ```bash
-# After training, merge and save
-merged_model = model.merge_and_unload()
-merged_model.save_pretrained('./gemma-qlora-medical')
-tokenizer.save_pretrained('./gemma-qlora-medical')
+# Upload LoRA adapter
+aws s3 sync ./cloud_project/final_lora/ s3://25tfgf-ai-medical/models/final_lora/
 
-# Convert to GGUF (requires llama.cpp)
-# Upload to S3
-aws s3 cp ./gemma-qlora-medical/ s3://25tfgf-ai-medical/models/ --recursive
+# Upload GGUF for Ollama
+aws s3 sync ./cloud_project/medical_assistant_gguf/ s3://25tfgf-ai-medical/models/medical_assistant_gguf/
+
+# Upload logs and figures
+aws s3 cp ./cloud_project/training_log.csv s3://25tfgf-ai-medical/models/
+aws s3 cp ./cloud_project/training_loss_curve.png s3://25tfgf-ai-medical/models/
 ```
 
 ### Deliverables for Section 5
@@ -475,82 +508,208 @@ aws s3 cp ./gemma-qlora-medical/ s3://25tfgf-ai-medical/models/ --recursive
 ### Step 6.1: SSH to EC2 Instance
 
 ```bash
-ssh -i 25tfgf-key.pem ubuntu@<EC2_PUBLIC_IP>
+ssh -i lab6_key_pair.pem ubuntu@<EC2_PUBLIC_IP>
 ```
 
-### Step 6.2: Run Ollama Setup
+### Step 6.2: Install Ollama
 
 ```bash
-# Copy service files
-sudo cp ollama.service /etc/systemd/system/
-sudo cp openwebui.service /etc/systemd/system/
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+```
 
-# Reload systemd
+### Step 6.3: Configure Ollama to Listen on All Interfaces
+
+By default Ollama binds to `127.0.0.1`. OpenWebUI (running in Docker) needs to reach it.
+
+Edit the systemd service:
+```bash
+sudo nano /etc/systemd/system/ollama.service
+```
+
+Add under `[Service]`:
+```ini
+Environment="OLLAMA_HOST=0.0.0.0"
+```
+
+Reload and restart:
+```bash
 sudo systemctl daemon-reload
+sudo systemctl restart ollama
+```
 
-# Enable and start Ollama
+### Step 6.4: Create Ollama systemd Service (Auto-start)
+
+```bash
+sudo tee /etc/systemd/system/ollama.service > /dev/null <<'EOF'
+[Unit]
+Description=Ollama Service
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ollama serve
+User=ubuntu
+Group=ubuntu
+Restart=always
+RestartSec=3
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="OLLAMA_HOST=0.0.0.0"
+
+[Install]
+WantedBy=default.target
+EOF
+
+sudo systemctl daemon-reload
 sudo systemctl enable ollama
 sudo systemctl start ollama
-
-# Verify
-sudo systemctl status ollama --no-pager
 ```
 
-### Step 6.3: Transfer and Load Model
+### Step 6.5: Download Model from S3
 
 ```bash
-# Option A: Download from S3
-aws s3 cp s3://25tfgf-ai-medical/models/gemma-qlora-medical /home/ubuntu/model/
-
-# Option B: Create from GGUF (if converted locally)
-ollama create gemma-4-2b-medical -f /path/to/model.gguf
+mkdir -p /home/ubuntu/model
+aws s3 sync s3://25tfgf-ai-medical/models/medical_assistant_gguf/ /home/ubuntu/model/
 ```
 
-### Step 6.4: Test Ollama API
+### Step 6.6: Create Ollama Modelfile
+
+Create `/home/ubuntu/model/Modelfile`:
+
+```dockerfile
+FROM /home/ubuntu/model/llama-3.2-1b-instruct.Q4_K_M.gguf
+
+PARAMETER temperature 0.4
+PARAMETER top_p 0.85
+PARAMETER repeat_penalty 1.15
+PARAMETER num_ctx 2048
+
+SYSTEM """You are a helpful medical assistant. The user describes their symptoms or asks a medical question. Respond directly to THEM using 'you' and 'your'. Be concise (1-3 sentences). Do NOT describe patients in the third person. Do NOT use clinical note style. Do NOT use bullet points or lists. Write like you're talking to the person asking."""
+```
+
+### Step 6.7: Create and Verify Model
 
 ```bash
-# Test API endpoint
+cd /home/ubuntu/model
+ollama create medical-assistant -f Modelfile
+ollama list
+```
+
+### Step 6.8: Test Ollama API
+
+```bash
 curl http://localhost:11434/api/generate -d '{
-  "model": "gemma-4-2b-medical",
-  "prompt": "What is the mechanism of action of ibuprofen?",
+  "model": "medical-assistant",
+  "prompt": "I have a severe headache, sensitivity to light, and nausea. What could this be?",
   "stream": false
 }'
 ```
 
-### EC2 Setup Scripts
+### Step 6.9: Fix Security Group (if needed)
 
-| Script | Purpose |
-|--------|---------|
-| `ec2/setup_ollama.sh` | Installs Ollama and creates systemd service |
-| `ec2/setup_openwebui.sh` | Installs OpenWebUI (Docker or pip) |
-| `ec2/ollama.service` | Auto-start Ollama on boot |
-| `ec2/openwebui.service` | Auto-start OpenWebUI on boot |
+Ensure the EC2 security group allows:
+- Port 22 (SSH) from `0.0.0.0/0`
+- Port 11434 (Ollama) from `0.0.0.0/0`
+- Port 8080 (OpenWebUI) from `0.0.0.0/0`
+
+```bash
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-YOUR_SG_ID \
+  --protocol tcp --port 11434 --cidr 0.0.0.0/0
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-YOUR_SG_ID \
+  --protocol tcp --port 8080 --cidr 0.0.0.0/0
+```
 
 ### Deliverables for Section 6
 - [ ] All commands copy-pasted verbatim in README and report
-- [ ] Screenshot: Terminal showing Ollama serving Gemma model with model name visible
-- [ ] Screenshot: curl call to API with response shown
+- [ ] Screenshot: Terminal showing Ollama serving `medical-assistant` model
+- [ ] Screenshot: curl API response
 
 ---
 
 ## Section 7: Web Interface (2 marks)
 
-### Step 7.1: Run OpenWebUI Setup
+### Step 7.1: Install Docker
 
 ```bash
-# On EC2 instance
-./setup_openwebui.sh
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Add user to docker group
+sudo usermod -aG docker ubuntu
 ```
 
-### Step 7.2: Access Web Interface
+### Step 7.2: Run OpenWebUI (Docker)
+
+```bash
+# Create volume for persistent data
+docker volume create open-webui
+
+# Run OpenWebUI container
+docker run -d \
+  --name openwebui \
+  --restart always \
+  -p 8080:8080 \
+  -e OLLAMA_BASE_URL=http://172.31.84.231:11434 \
+  -e ANONYMIZED_TELEMETRY=False \
+  -v open-webui:/app/backend/data \
+  ghcr.io/open-webui/open-webui:main
+```
+
+> **Note:** Replace `172.31.84.231` with your EC2 instance's **private IP** (check with `hostname -I`).
+
+### Step 7.3: Verify OpenWebUI is Running
+
+```bash
+docker ps
+docker logs --tail 20 openwebui
+```
+
+### Step 7.4: Access Web Interface
 
 Open browser: `http://<EC2_PUBLIC_IP>:8080`
 
-### Step 7.3: Configure Model
+### Step 7.5: Configure Model
 
-1. Click settings → Models
-2. Select `gemma-4-2b-medical` (or whichever model name you used)
-3. Start chatting
+1. Create an admin account on first visit
+2. Click settings → Models
+3. Select `medical-assistant`
+4. Start chatting
+
+### OpenWebUI systemd Service (Optional)
+
+For auto-start without Docker's built-in restart:
+
+```bash
+sudo tee /etc/systemd/system/openwebui.service > /dev/null <<'EOF'
+[Unit]
+Description=OpenWebUI Service
+After=network-online.target ollama.service
+Requires=ollama.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker run --rm --name openwebui -p 8080:8080 \
+  -e OLLAMA_BASE_URL=http://172.31.84.231:11434/api \
+  -v open-webui:/app/backend/data \
+  ghcr.io/open-webui/open-webui:main
+ExecStop=/usr/bin/docker stop openwebui
+ExecStopPost=/usr/bin/docker rm openwebui
+User=ubuntu
+Group=ubuntu
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable openwebui
+sudo systemctl start openwebui
+```
 
 ### Deliverables for Section 7
 - [ ] Screenshot: OpenWebUI running in browser with fine-tuned model name visible
@@ -562,30 +721,28 @@ Open browser: `http://<EC2_PUBLIC_IP>:8080`
 
 ```
 cloud-project/
-├── IMPLEMENTATION-TUTORIAL.md      # This file
-├── CISC-886-Project-Deliverable.md # Project requirements
-├── Project-Resource-Guide.md      # Resource guide
-├── README.md                      # Main documentation
+├── README.md                      # This file (implementation tutorial)
+├── CISC-886-Report.md             # Project deliverable report
 ├── spark/                         # Section 4: EMR preprocessing
 │   ├── preprocess.py              # PySpark pipeline
 │   ├── eda_analysis.py            # EDA visualizations
-│   ├── bootstrap_emr.sh            # EMR bootstrap
+│   ├── bootstrap_eda.sh           # EMR bootstrap
 │   └── requirements.txt           # Python dependencies
 ├── colab/                         # Section 5: Fine-tuning
-│   └── fine_tune.ipynb            # QLoRA training notebook
-├── ec2/                          # Sections 6 & 7: Deployment
-│   ├── setup_ollama.sh           # Ollama installation
-│   ├── setup_openwebui.sh        # OpenWebUI installation
-│   ├── ollama.service            # Ollama systemd
-│   └── openwebui.service         # OpenWebUI systemd
-└── terraform/                    # Section 2: Infrastructure
-    ├── main.tf                   # VPC, subnets, IGW
-    ├── variables.tf              # Input variables
-    ├── outputs.tf                # Output values
+│   ├── fine_tune.ipynb            # QLoRA training notebook
+│   └── fine_tune.py               # Training script (local workstation)
+├── model/                         # Exported model artifacts
+│   └── medical_assistant_gguf/    # GGUF export for Ollama
+│       ├── llama-3.2-1b-instruct.Q4_K_M.gguf
+│       └── Modelfile
+└── terraform/                     # Section 2: Infrastructure
+    ├── main.tf                    # VPC, subnets, IGW
+    ├── variables.tf               # Input variables
+    ├── outputs.tf                 # Output values
     ├── provider.tf                # AWS provider
-    ├── security-groups.tf        # Security groups
-    ├── emr.tf                    # EMR cluster
-    └── ec2.tf                    # EC2 instance
+    ├── security-groups.tf         # Security groups
+    ├── emr.tf                     # EMR cluster
+    └── ec2.tf                     # EC2 instance
 ```
 
 ---
@@ -596,7 +753,7 @@ cloud-project/
 |-----------|--------------------------|-----------------------------------|
 | **VPC/Network** | Creates VPC, subnets, routing | — |
 | **EMR** | Provisions EMR cluster | `aws emr create-cluster`, `spark-submit` |
-| **EC2** | Provisions EC2 instance | `ssh`, `./setup_ollama.sh`, `./setup_openwebui.sh` |
+| **EC2** | Provisions EC2 instance | `ssh`, `curl` install scripts, `docker run` |
 | **S3** | Creates S3 bucket | `aws s3 cp`, `aws s3 sync` |
 
 **Terraform** = Infrastructure provisioning (creates resources)
@@ -624,19 +781,23 @@ cloud-project/
 - Ensure bootstrap script is in S3 before cluster creation
 
 ### Out of Memory During Fine-tuning
-- Reduce batch size
-- Increase gradient accumulation steps
+- Reduce batch size (currently 4 per device)
+- Increase gradient accumulation steps (currently 4)
 - Use 4-bit quantization (already configured)
+- Reduce max sequence length
 
 ### Ollama Model Not Loading
-- Check model file exists and is valid GGUF format
-- Verify sufficient disk space on EC2
+- Check model file exists and is valid GGUF format: `ollama list`
+- Verify sufficient disk space on EC2: `df -h`
+- Check Ollama is bound to 0.0.0.0: `sudo ss -tlnp | grep 11434`
 - Check Ollama logs: `journalctl -u ollama -f`
 
 ### OpenWebUI Cannot Connect to Ollama
 - Ensure Ollama is running: `sudo systemctl status ollama`
-- Verify OLLAMA_BASE_URL environment variable
-- Check security group allows port 11434
+- Verify `OLLAMA_HOST=0.0.0.0` is set in the systemd service
+- Use EC2 **private IP** in `OLLAMA_BASE_URL`, not localhost
+- Check security group allows port 11434 from EC2's own security group
+- Check security group allows port 8080 from `0.0.0.0/0`
 
 ---
 
@@ -669,12 +830,14 @@ cloud-project/
 - [ ] 3 EDA figures with captions
 
 ### Section 5 — Fine-Tuning (6 marks)
-- [ ] Jupyter notebook committed
-- [ ] Hyperparameter table
-- [ ] Base vs Fine-tuned comparison (2 examples)
+- [x] Jupyter notebook committed (`colab/fine_tune.ipynb`)
+- [x] Training script committed (`colab/fine_tune.py`)
+- [x] Hyperparameter table
+- [x] Base vs Fine-tuned comparison (3 examples)
+- [x] Training loss curve
 
 ### Section 6 — EC2 Deployment (3 marks)
-- [ ] Commands in README/report
+- [x] Commands in README/report
 - [ ] Ollama terminal screenshot
 - [ ] curl API screenshot
 
@@ -684,4 +847,4 @@ cloud-project/
 
 ---
 
-*Last Updated: 2026-04-29*
+*Last Updated: 2026-05-04*
