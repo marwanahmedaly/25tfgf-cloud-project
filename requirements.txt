@@ -1,0 +1,18 @@
+# Local Workstation Requirements
+# For fine-tuning with Unsloth on a local GPU (RTX 5000 Ada)
+
+unsloth
+unsloth-zoo
+transformers>=4.38.0
+peft
+trl
+accelerate
+bitsandbytes
+datasets>=2.18.0
+scipy
+boto3
+pandas
+matplotlib
+seaborn
+pyarrow
+torch

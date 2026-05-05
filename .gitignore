@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.*.backup
+*.tfplan
+
+# AWS / Keys
+*.pem
+
+# Data & Models (large binaries)
+data/
+model/checkpoints/
+model/medical_assistant_gguf_gguf/
+model/medical-q8_0.gguf
+model/.cache/
+
+# LaTeX source and build artifacts
+latex/
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.Zone.Identifier
+.claude/
+.mypy_cache/
+.ruff_cache/
+
+# Misc
+CISC-886-Report.log
+cloud report.zip

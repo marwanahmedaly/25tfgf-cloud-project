@@ -41,19 +41,19 @@ variable "ec2_instance_type" {
 variable "emr_instance_type" {
   description = "EMR core node instance type"
   type        = string
-  default     = "c5.xlarge"
+  default     = "m5.xlarge"
 }
 
 variable "emr_master_instance_type" {
   description = "EMR master node instance type"
   type        = string
-  default     = "c5.xlarge"
+  default     = "m5.xlarge"
 }
 
 variable "emr_instance_count" {
-  description = "Number of EMR core nodes (spot)"
+  description = "Number of EMR core nodes"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "emr_spot_bid_price" {

@@ -1,6 +1,6 @@
 #!/bin/bash
 # EC2 Ollama Setup Script
-# Run on Ubuntu 22.04 EC2 instance with GPU (g4dn.xlarge)
+# Run on Ubuntu 22.04 EC2 instance (m5.xlarge)
 
 set -e
 

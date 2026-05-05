@@ -14,7 +14,7 @@ if command -v docker &> /dev/null; then
         -v open-webui:/app/backend/data \
         --name open-webui \
         --restart unless-stopped \
-        -e OLLAMA_BASE_URL=http://localhost:11434 \
+        -e OLLAMA_BASE_URL=http://<EC2_PRIVATE_IP>:11434 \
         ghcr.io/open-webui/open-webui:main
 
     echo "OpenWebUI (Docker) installed successfully"

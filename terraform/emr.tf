@@ -308,8 +308,6 @@ resource "aws_emr_cluster" "main" {
 
   applications = ["Spark", "JupyterHub"]
 
-  # Bootstrap action removed - no bootstrap_emr.sh in S3 bucket yet
-
   tags = {
     Name = "${var.net_id}-emr-cluster"
     net_id = var.net_id

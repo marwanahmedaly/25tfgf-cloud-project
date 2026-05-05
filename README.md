@@ -11,7 +11,7 @@
 
 ## Overview
 
-This document provides a complete step-by-step implementation tutorial aligned with the CISC 886 project deliverables. Each section maps to a deliverable section in `CISC-886-Report.md`.
+This document provides a complete step-by-step implementation tutorial aligned with the CISC 886 project deliverables. Each section maps to a deliverable section in `latex/main.tex`.
 
 ### Architecture Summary
 
@@ -105,15 +105,15 @@ variable "net_id" {
 }
 
 variable "key_name" {
-  default = "YOUR_KEY_NAME"  # e.g., "25tfgf-key"
+  default = "YOUR_KEY_NAME"  # e.g., "lab6_key_pair"
 }
 ```
 
 ### Step 2.3: Plan and Apply
 
 ```bash
-terraform plan -var="net_id=25tfgf" -var="key_name=25tfgf-key"
-terraform apply -var="net_id=25tfgf" -var="key_name=25tfgf-key"
+terraform plan -var="net_id=25tfgf" -var="key_name=lab6_key_pair"
+terraform apply -var="net_id=25tfgf" -var="key_name=lab6_key_pair"
 ```
 
 ### What Terraform Creates
@@ -227,7 +227,7 @@ After Spark preprocessing:
 
 ```bash
 # Upload before creating cluster
-aws s3 cp spark/bootstrap_emr.sh s3://25tfgf-ai-medical/
+aws s3 cp spark/bootstrap_eda.sh s3://25tfgf-ai-medical/
 ```
 
 ### Step 4.2: Create EMR Cluster
@@ -240,7 +240,7 @@ aws emr create-cluster \
   --instance-type m5.xlarge \
   --ec2-attributes SubnetId=subnet-XXXXXX,InstanceProfile=25tfgf-emr-instance-profile \
   --service-role arn:aws:iam::XXXXXXXXXXXX:role/25tfgf-emr-service-role \
-  --bootstrap-actions Path=s3://25tfgf-ai-medical/bootstrap_emr.sh,Name="Install dependencies" \
+  --bootstrap-actions Path=s3://25tfgf-ai-medical/bootstrap_eda.sh,Name="Install EDA dependencies" \
   --applications Name=Spark Name=JupyterHub \
   --configurations '{"Classification":"spark-env","Properties":{"PYSPARK_PYTHON":"/usr/bin/python3"}}'
 ```
@@ -252,7 +252,7 @@ aws emr create-cluster \
 aws emr describe-cluster --cluster-id j-XXXXXXXX --query 'Cluster.Status'
 
 # SSH to master node (if needed)
-ssh -i 25tfgf-key.pem hadoop@master-public-dns
+ssh -i lab6_key_pair.pem hadoop@master-public-dns
 ```
 
 ### Step 4.4: Run PySpark Preprocessing
@@ -338,8 +338,8 @@ pip install unsloth transformers peft trl accelerate bitsandbytes datasets scipy
 4. **Prepare prompts** — Applies Llama-3.2 chat template with medical system prompt
 5. **Load model** — `unsloth/Llama-3.2-1B-Instruct` with 4-bit QLoRA
 6. **Fine-tune** — 50k sample, 1 epoch, effective batch size 16
-7. **Save adapter** — `./cloud_project/final_lora/` directory
-8. **Export GGUF** — `./cloud_project/medical_assistant_gguf/` for Ollama
+7. **Save adapter** — `./model/final_lora/` directory
+8. **Export GGUF** — `./model/medical_assistant_gguf_gguf/` for Ollama
 9. **Plot loss curve** — Saves training log and loss figure
 
 ### Step 5.1: Download Processed Data
@@ -484,14 +484,14 @@ Response: [concise medical advice in second person]
 
 ```bash
 # Upload LoRA adapter
-aws s3 sync ./cloud_project/final_lora/ s3://25tfgf-ai-medical/models/final_lora/
+aws s3 sync ./model/final_lora/ s3://25tfgf-ai-medical/models/final_lora/
 
 # Upload GGUF for Ollama
-aws s3 sync ./cloud_project/medical_assistant_gguf/ s3://25tfgf-ai-medical/models/medical_assistant_gguf/
+aws s3 sync ./model/medical_assistant_gguf_gguf/ s3://25tfgf-ai-medical/models/medical_assistant_gguf_gguf/
 
 # Upload logs and figures
-aws s3 cp ./cloud_project/training_log.csv s3://25tfgf-ai-medical/models/
-aws s3 cp ./cloud_project/training_loss_curve.png s3://25tfgf-ai-medical/models/
+aws s3 cp ./model/training_log.csv s3://25tfgf-ai-medical/models/
+aws s3 cp ./model/training_loss_curve.png s3://25tfgf-ai-medical/models/
 ```
 
 ### Deliverables for Section 5
@@ -568,22 +568,70 @@ sudo systemctl start ollama
 
 ```bash
 mkdir -p /home/ubuntu/model
-aws s3 sync s3://25tfgf-ai-medical/models/medical_assistant_gguf/ /home/ubuntu/model/
+aws s3 sync s3://25tfgf-ai-medical/models/medical_assistant_gguf_gguf/ /home/ubuntu/model/
 ```
 
 ### Step 6.6: Create Ollama Modelfile
 
-Create `/home/ubuntu/model/Modelfile`:
+Copy the committed Modelfile from the repo to the EC2 instance:
+
+```bash
+aws s3 cp s3://25tfgf-ai-medical/models/medical_assistant_gguf_gguf/Modelfile /home/ubuntu/model/Modelfile
+```
+
+The Modelfile configures the Llama 3.2 chat template, stop tokens, and generation parameters:
 
 ```dockerfile
-FROM /home/ubuntu/model/llama-3.2-1b-instruct.Q4_K_M.gguf
+FROM llama-3.2-1b-instruct.Q4_K_M.gguf
 
-PARAMETER temperature 0.4
-PARAMETER top_p 0.85
-PARAMETER repeat_penalty 1.15
-PARAMETER num_ctx 2048
+TEMPLATE """{{ if .Messages }}
+{{- if or .System .Tools }}<|start_header_id|>system<|end_header_id|>
+{{- if .System }}
 
-SYSTEM """You are a helpful medical assistant. The user describes their symptoms or asks a medical question. Respond directly to THEM using 'you' and 'your'. Be concise (1-3 sentences). Do NOT describe patients in the third person. Do NOT use clinical note style. Do NOT use bullet points or lists. Write like you're talking to the person asking."""
+{{ .System }}
+{{- end }}
+{{- if .Tools }}
+
+You are a helpful assistant with tool calling capabilities...
+{{- end }}
+{{- end }}<|eot_id|>
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 }}
+{{- if eq .Role "user" }}<|start_header_id|>user<|end_header_id|>
+
+{{ .Content }}<|eot_id|>{{ if $last }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ end }}
+{{- else if eq .Role "assistant" }}<|start_header_id|>assistant<|end_header_id|>
+{{- if .ToolCalls }}
+
+{{- range .ToolCalls }}{"name": "{{ .Function.Name }}", "parameters": {{ .Function.Arguments }}}{{ end }}
+{{- else }}
+
+{{ .Content }}{{ if not $last }}<|eot_id|>{{ end }}
+{{- end }}
+{{- else if eq .Role "tool" }}<|start_header_id|>ipython<|end_header_id|>
+
+{{ .Content }}<|eot_id|>{{ if $last }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ end }}
+{{- end }}
+{{- end }}
+{{- else }}
+{{- if .System }}<|start_header_id|>system<|end_header_id|>
+
+{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
+
+{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ end }}{{ .Response }}{{ if .Response }}<|eot_id|>{{ end }}"""
+
+PARAMETER stop "<|start_header_id|>"
+PARAMETER stop "<|end_header_id|>"
+PARAMETER stop "<|eot_id|>"
+PARAMETER stop "<|eom_id|>"
+PARAMETER temperature 1.5
+PARAMETER min_p 0.1
 ```
 
 ### Step 6.7: Create and Verify Model
@@ -722,19 +770,22 @@ sudo systemctl start openwebui
 ```
 cloud-project/
 ├── README.md                      # This file (implementation tutorial)
-├── CISC-886-Report.md             # Project deliverable report
+├── latex/
+│   └── main.tex                   # Project deliverable report (LaTeX)
 ├── spark/                         # Section 4: EMR preprocessing
 │   ├── preprocess.py              # PySpark pipeline
 │   ├── eda_analysis.py            # EDA visualizations
 │   ├── bootstrap_eda.sh           # EMR bootstrap
 │   └── requirements.txt           # Python dependencies
 ├── colab/                         # Section 5: Fine-tuning
-│   ├── fine_tune.ipynb            # QLoRA training notebook
-│   └── fine_tune.ipynb            # Training notebook (local workstation)
+│   └── fine_tune.ipynb            # QLoRA training notebook
 ├── model/                         # Exported model artifacts
-│   └── medical_assistant_gguf/    # GGUF export for Ollama
-│       ├── llama-3.2-1b-instruct.Q4_K_M.gguf
-│       └── Modelfile
+│   ├── final_lora/                # LoRA adapter weights
+│   ├── medical_assistant_gguf_gguf/  # GGUF export for Ollama
+│   │   ├── llama-3.2-1b-instruct.Q4_K_M.gguf
+│   │   └── Modelfile
+│   ├── training_log.csv           # Training loss log
+│   └── training_loss_curve.png    # Loss curve visualization
 └── terraform/                     # Section 2: Infrastructure
     ├── main.tf                    # VPC, subnets, IGW
     ├── variables.tf               # Input variables
@@ -831,7 +882,6 @@ cloud-project/
 
 ### Section 5 — Fine-Tuning (6 marks)
 - [x] Jupyter notebook committed (`colab/fine_tune.ipynb`)
-- [x] Training notebook committed (`colab/fine_tune.ipynb`)
 - [x] Hyperparameter table
 - [x] Base vs Fine-tuned comparison (3 examples)
 - [x] Training loss curve
