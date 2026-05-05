@@ -4,7 +4,7 @@
 **Project:** Cloud-based Medical Chatbot (Healthcare domain)
 **Model:** unsloth/Llama-3.2-1B-Instruct (Meta Llama 3.2 1B, instruction-tuned via Unsloth)
 **Dataset:** ruslanmv/ai-medical-dataset (21.2M medical Q&A pairs)
-**Training:** Local workstation (RTX 5000 Ada, 16 GB VRAM) with Unsloth (`/colab/fine_tune.py`)
+**Training:** Local workstation (RTX 5000 Ada, 16 GB VRAM) with Unsloth (`/colab/fine_tune.ipynb`)
 **Inference:** EC2 m5.xlarge (Ubuntu 22.04) + Ollama + OpenWebUI (Docker)
 
 ---
@@ -306,7 +306,7 @@ The preprocessing pipeline performs:
 5. **Split** into train/val/test (80/10/10)
 6. **Write** partitioned Parquet to S3
 
-> **Note:** The chat template and second-person rewriting are applied at training time in `colab/fine_tune.py`, not during Spark preprocessing. The Spark pipeline outputs raw parsed question/context pairs.
+> **Note:** The chat template and second-person rewriting are applied at training time in `colab/fine_tune.ipynb`, not during Spark preprocessing. The Spark pipeline outputs raw parsed question/context pairs.
 
 ### Deliverables for Section 4
 - [ ] PySpark script committed to GitHub with inline explanation
@@ -321,7 +321,7 @@ The preprocessing pipeline performs:
 
 ## Section 5: Model Fine-Tuning (6 marks)
 
-> **Training on Local Workstation with Unsloth** — Fine-tuning is performed on a local workstation (RTX 5000 Ada, 16 GB VRAM) using the `unsloth/Llama-3.2-1B-Instruct` model with QLoRA adapters. The training script is at `/colab/fine_tune.py`.
+> **Training on Local Workstation with Unsloth** — Fine-tuning is performed on a local workstation (RTX 5000 Ada, 16 GB VRAM) using the `unsloth/Llama-3.2-1B-Instruct` model with QLoRA adapters. The training notebook is at `/colab/fine_tune.ipynb`.
 
 ### Prerequisites
 
@@ -330,7 +330,7 @@ The preprocessing pipeline performs:
 pip install unsloth transformers peft trl accelerate bitsandbytes datasets scipy boto3
 ```
 
-### What the Script Does (`/colab/fine_tune.py`)
+### What the Notebook Does (`/colab/fine_tune.ipynb`)
 
 1. **Download from S3** — Fetches processed Parquet data from `25tfgf-ai-medical/processed/`
 2. **Load dataset** — Loads train/val splits as HuggingFace Dataset (50k train / 2.5k eval)
@@ -356,7 +356,7 @@ aws s3 sync s3://25tfgf-ai-medical/processed/ ./data/processed/
 
 ```bash
 cd colab
-python fine_tune.py
+jupyter notebook fine_tune.ipynb
 ```
 
 The script implements two robust mechanisms:
@@ -388,7 +388,7 @@ The script implements two robust mechanisms:
 | Save Steps | 1000 |
 | Save Total Limit | 2 |
 
-### Fine-Tuning Code (`/colab/fine_tune.py`)
+### Fine-Tuning Code (`/colab/fine_tune.ipynb`)
 
 ```python
 from unsloth import FastLanguageModel
@@ -730,7 +730,7 @@ cloud-project/
 │   └── requirements.txt           # Python dependencies
 ├── colab/                         # Section 5: Fine-tuning
 │   ├── fine_tune.ipynb            # QLoRA training notebook
-│   └── fine_tune.py               # Training script (local workstation)
+│   └── fine_tune.ipynb            # Training notebook (local workstation)
 ├── model/                         # Exported model artifacts
 │   └── medical_assistant_gguf/    # GGUF export for Ollama
 │       ├── llama-3.2-1b-instruct.Q4_K_M.gguf
@@ -831,7 +831,7 @@ cloud-project/
 
 ### Section 5 — Fine-Tuning (6 marks)
 - [x] Jupyter notebook committed (`colab/fine_tune.ipynb`)
-- [x] Training script committed (`colab/fine_tune.py`)
+- [x] Training notebook committed (`colab/fine_tune.ipynb`)
 - [x] Hyperparameter table
 - [x] Base vs Fine-tuned comparison (3 examples)
 - [x] Training loss curve
