@@ -7,11 +7,27 @@
 **Training:** Local workstation (RTX 5000 Ada, 16 GB VRAM) with Unsloth (`/colab/fine_tune.ipynb`)
 **Inference:** EC2 m5.xlarge (Ubuntu 22.04) + Ollama + OpenWebUI (Docker)
 
+## Project overview
+
+A cloud pipeline that turns a public medical Q&A dataset into a small, locally fine-tuned chatbot served from AWS.
+
+- **Data:** about 21.2 million source records (ruslanmv/ai-medical-dataset) stored in S3 and preprocessed with PySpark on an EMR cluster (length filters, prompt template, seeded 80/10/10 split, Parquet partitioned by split).
+- **Training:** QLoRA fine-tuning of `unsloth/Llama-3.2-1B-Instruct` on a local GPU workstation using 50,000 training and 2,500 validation examples (rank-16 LoRA adapters, 1 epoch). Training loss fell from about 2.52 to 1.18.
+- **Serving:** the model is exported to GGUF (Q4_K_M), served by Ollama on an EC2 m5.xlarge instance, and used through an OpenWebUI chat interface.
+- **Infrastructure as code:** Terraform defines the VPC, two public subnets, internet gateway, security groups, S3 bucket, IAM roles, the EMR cluster and the EC2 instance.
+- **Report:** see `Cloud_Project.pdf`.
+
+> **Disclaimer:** this is an academic demonstration, not a medical tool. Falling training loss does not by itself prove better answers, and no clinical accuracy is claimed.
+>
+> **Security note:** the demo security groups open SSH (22), Ollama (11434) and OpenWebUI (8080) to `0.0.0.0/0`. Restrict them before any real use.
+
+The rest of this file is the step-by-step implementation tutorial written for the course deliverables.
+
 ---
 
 ## Overview
 
-This document provides a complete step-by-step implementation tutorial aligned with the CISC 886 project deliverables. Each section maps to a deliverable section in `latex/main.tex`.
+This document provides a complete step-by-step implementation tutorial aligned with the CISC 886 project deliverables. Each section maps to a deliverable section of the course report (`Cloud_Project.pdf`).
 
 ### Architecture Summary
 
@@ -768,33 +784,33 @@ sudo systemctl start openwebui
 ## Repository Structure
 
 ```
-cloud-project/
-├── README.md                      # This file (implementation tutorial)
-├── latex/
-│   └── main.tex                   # Project deliverable report (LaTeX)
-├── spark/                         # Section 4: EMR preprocessing
-│   ├── preprocess.py              # PySpark pipeline
-│   ├── eda_analysis.py            # EDA visualizations
-│   ├── bootstrap_eda.sh           # EMR bootstrap
-│   └── requirements.txt           # Python dependencies
-├── colab/                         # Section 5: Fine-tuning
-│   └── fine_tune.ipynb            # QLoRA training notebook
-├── model/                         # Exported model artifacts
-│   ├── final_lora/                # LoRA adapter weights
-│   ├── medical_assistant_gguf_gguf/  # GGUF export for Ollama
-│   │   ├── llama-3.2-1b-instruct.Q4_K_M.gguf
-│   │   └── Modelfile
-│   ├── training_log.csv           # Training loss log
-│   └── training_loss_curve.png    # Loss curve visualization
-└── terraform/                     # Section 2: Infrastructure
-    ├── main.tf                    # VPC, subnets, IGW
-    ├── variables.tf               # Input variables
-    ├── outputs.tf                 # Output values
-    ├── provider.tf                # AWS provider
-    ├── security-groups.tf         # Security groups
-    ├── emr.tf                     # EMR cluster
-    └── ec2.tf                     # EC2 instance
+25tfgf-cloud-project/
+├── README.md                    # This file (implementation tutorial)
+├── Cloud_Project.pdf            # Project report
+├── requirements.txt
+├── terraform/                   # Section 2: infrastructure
+│   ├── main.tf                  # VPC, subnets, internet gateway, routes
+│   ├── variables.tf             # Input variables
+│   ├── outputs.tf               # Output values
+│   ├── provider.tf              # AWS provider
+│   ├── security-groups.tf       # EC2, EMR master and EMR slave security groups
+│   ├── emr.tf                   # S3 bucket, IAM roles, EMR cluster
+│   └── ec2.tf                   # EC2 instance and IAM profile
+├── spark/                       # Section 4: EMR preprocessing and EDA
+│   ├── preprocess.py            # PySpark pipeline
+│   ├── eda_analysis.py, eda_local.py, eda_emr_stats.py,
+│   │   eda_emr_plot.py, run_eda_emr.py    # EDA statistics and plots
+│   ├── bootstrap_emr.sh, bootstrap_eda.sh  # EMR bootstrap actions
+│   ├── test_*.py                # dependency and plotting smoke tests
+│   └── requirements.txt
+├── colab/                       # Section 5: fine-tuning
+│   └── fine_tune.ipynb          # QLoRA training notebook (Unsloth)
+└── ec2/                         # Sections 6-7: deployment
+    ├── setup_ollama.sh, setup_openwebui.sh
+    └── ollama.service, openwebui.service
 ```
+
+Model artifacts (LoRA adapter, GGUF file, Modelfile, training log and loss curve) are produced by the notebook and are not stored in this repository.
 
 ---
 
@@ -898,3 +914,11 @@ cloud-project/
 ---
 
 *Last Updated: 2026-05-04*
+
+---
+
+## Licenses and attribution
+
+- Dataset: ruslanmv/ai-medical-dataset (CC-BY 4.0).
+- Model: Meta Llama 3.2 1B Instruct, via Unsloth, under the Llama 3.2 Community License.
+- No license has been declared for the code in this repository.
